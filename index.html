@@ -23,7 +23,7 @@ h1{font-size:22px;margin:4px 0 2px}.sub{color:var(--mut);font-size:13px;margin-b
 button{font:inherit;border:0;border-radius:12px;padding:10px 14px;background:var(--ac);color:#fff;cursor:pointer}
 button.g{background:var(--bd);color:var(--tx)}button.s{padding:6px 10px;font-size:14px}
 button.x{background:none;color:var(--mut);padding:4px 8px}
-input,select{font:inherit;width:100%;padding:10px;border-radius:10px;border:1px solid var(--bd);background:var(--bg);color:var(--tx);margin:4px 0 8px}
+input,select,textarea{font:inherit;width:100%;padding:10px;border-radius:10px;border:1px solid var(--bd);background:var(--bg);color:var(--tx);margin:4px 0 8px}
 label{font-size:12px;color:var(--mut)}
 nav{position:fixed;left:0;right:0;bottom:0;display:flex;background:var(--card);border-top:1px solid var(--bd);padding:6px 6px calc(6px + env(safe-area-inset-bottom,0px))}
 nav button{flex:1;background:none;color:var(--mut);border-radius:10px}nav button.on{color:var(--ac);font-weight:700}
@@ -32,6 +32,17 @@ nav button{flex:1;background:none;color:var(--mut);border-radius:10px}nav button
 .pill{display:inline-block;margin-top:6px;font-size:13px;color:var(--ok)}
 .empty{text-align:center;color:var(--mut);padding:24px 0}
 #st{font-size:12px;color:var(--mut)}
+textarea{min-height:140px;resize:vertical}
+.alert{border-radius:12px;padding:10px 12px;margin-bottom:10px;font-size:14px;border:1px solid var(--warn);background:rgba(217,138,28,.15)}
+.alert.r{border-color:var(--ac);background:rgba(214,69,107,.15)}
+.cal{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;text-align:center}
+.cal .wd{font-size:11px;color:var(--mut);padding-bottom:4px}
+.day{background:none;color:var(--tx);padding:8px 0 4px;border-radius:10px;font-size:15px}
+.day.hoje{border:1px solid var(--ac)}.day.sel{background:var(--ac);color:#fff}
+.dots{display:flex;justify-content:center;gap:3px;height:6px;margin-top:3px}
+.dots i{width:5px;height:5px;border-radius:50%;background:var(--ok)}.dots i.dv{background:var(--warn)}
+.day.sel .dots i{background:#fff}
+.badge{background:var(--ac);color:#fff;border-radius:99px;font-size:11px;padding:1px 6px;margin-left:4px}
 </style>
 </head>
 <body>
@@ -43,123 +54,14 @@ nav button{flex:1;background:none;color:var(--mut);border-radius:10px}nav button
   <button data-t="r" onclick="go('r')">Resumo</button>
   <button data-t="d" onclick="go('d')">Dívidas</button>
   <button data-t="m" onclick="go('m')">Metas</button>
+  <button data-t="a" onclick="go('a')">Agenda</button>
+  <button data-t="n" onclick="go('n')">Notas</button>
 </nav>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script>
-let tab='r',items=[],names={a:'Eu',b:'Amor'},db=null,form=null;
+let tab='r',items=[],names={a:'Eu',b:'Amor'},db=null,form=null,cal=new Date(new Date().getFullYear(),new Date().getMonth(),1),selDay=null;
 const $=s=>document.querySelector(s);
 const R=v=>(+v||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const who=k=>k==='a'?names.a:k==='b'?names.b:'Juntos';
-const LS='contas-casal';
-function lsLoad(){try{const d=JSON.parse(localStorage.getItem(LS)||'{}');items=d.items||[];names=d.names||names}catch(e){}}
-function lsSave(){try{localStorage.setItem(LS,JSON.stringify({items,names}))}catch(e){}}
-async function save(it){
-  if(db){try{await db.collection('items').doc(it.id).set(it)}catch(e){$('#st').textContent='Erro ao salvar'}}
-  else{const i=items.findIndex(x=>x.id===it.id);i<0?items.push(it):items[i]=it;lsSave();render()}
-}
-async function del(id){
-  if(!confirm('Apagar este item?'))return;
-  if(db){try{await db.collection('items').doc(id).delete()}catch(e){}}
-  else{items=items.filter(x=>x.id!==id);lsSave();render()}
-}
-function go(t){tab=t;form=null;render()}
-function render(){
-  document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.t===tab));
-  $('#v').innerHTML=form?formHtml():tab==='r'?resumo():tab==='d'?lista('debt'):lista('goal');
-}
-function resumo(){
-  const D=items.filter(i=>i.type==='debt'),G=items.filter(i=>i.type==='goal');
-  const tot=D.reduce((s,i)=>s+i.total,0),pg=D.reduce((s,i)=>s+i.paid,0),falta=tot-pg;
-  const alvo=G.reduce((s,i)=>s+i.total,0),jun=G.reduce((s,i)=>s+i.paid,0);
-  const mens=G.reduce((s,i)=>s+(i.monthly||0),0);
-  let por=['a','b','j'].map(k=>{const f=D.filter(i=>i.who===k).reduce((s,i)=>s+i.total-i.paid,0);return `<div class="row"><span>${who(k)}</span><b>${R(f)}</b></div>`}).join('');
-  const prox=D.filter(i=>i.paid<i.total&&i.due).sort((a,b)=>a.due.localeCompare(b.due)).slice(0,3)
-    .map(i=>`<div class="row"><span>${esc(i.name)}</span><span class="mut">${new Date(i.due+'T12:00').toLocaleDateString('pt-BR')}</span></div>`).join('');
-  return `<div class="card"><div class="mut">Ainda devemos</div><div class="big" style="color:var(--ac)">${R(falta)}</div>
-  <div class="bar d"><i style="width:${tot?pg/tot*100:0}%"></i></div><div class="mut">Já pagamos ${R(pg)} de ${R(tot)}</div></div>
-  <div class="card"><div class="mut">Juntado nas metas</div><div class="big" style="color:var(--ok)">${R(jun)}</div>
-  <div class="bar"><i style="width:${alvo?Math.min(100,jun/alvo*100):0}%"></i></div>
-  <div class="mut">Objetivo total ${R(alvo)} · planejado ${R(mens)}/mês</div>
-  ${mens>0&&alvo>jun?`<div class="pill">Com esse ritmo, ~${Math.ceil((alvo-jun)/mens)} meses para completar tudo</div>`:''}</div>
-  <div class="card"><b>Quanto cada um deve</b><div style="margin-top:8px">${por}</div></div>
-  ${prox?`<div class="card"><b>Próximos vencimentos</b><div style="margin-top:8px">${prox}</div></div>`:''}`;
-}
-function lista(t){
-  const L=items.filter(i=>i.type===t);
-  const isD=t==='debt';
-  const cards=L.map(i=>{
-    const p=i.total?Math.min(100,i.paid/i.total*100):0,left=Math.max(0,i.total-i.paid);
-    let extra='';
-    if(!isD&&i.monthly>0&&left>0)extra=`<div class="pill">Faltam ${Math.ceil(left/i.monthly)} meses (${R(i.monthly)}/mês)</div>`;
-    if(isD&&i.due&&left>0)extra=`<div class="mut">Vence em ${new Date(i.due+'T12:00').toLocaleDateString('pt-BR')}</div>`;
-    const h=(i.log||[]).slice(-3).reverse().map(l=>`${new Date(l.d).toLocaleDateString('pt-BR')} · ${R(l.v)} · ${who(l.w)}`).join('<br>');
-    return `<div class="card"><div class="row"><b>${esc(i.name)}</b><span class="tag">${who(i.who)}</span></div>
-    <div class="bar ${isD?'d':''}"><i style="width:${p}%"></i></div>
-    <div class="row"><span class="mut">${isD?'Pago':'Juntado'} ${R(i.paid)} / ${R(i.total)}</span><b>${left?R(left):'✅ Concluído'}</b></div>
-    ${extra}${i.note?`<div class="mut">${esc(i.note)}</div>`:''}${h?`<div class="hist">${h}</div>`:''}
-    <div class="row" style="margin-top:10px"><button class="s" onclick="pay('${i.id}')">${isD?'+ Pagamento':'+ Depósito'}</button>
-    <span><button class="x" onclick="edit('${i.id}')">Editar</button><button class="x" onclick="del('${i.id}')">🗑</button></span></div></div>`}).join('');
-  return `<button style="width:100%;margin-bottom:12px" onclick="newItem('${t}')">+ ${isD?'Nova dívida / conta':'Nova meta'}</button>${cards||`<div class="empty">Nada por aqui ainda.</div>`}`;
-}
-function newItem(t){form={type:t,name:'',total:'',paid:0,who:'j',due:'',monthly:'',note:'',isNew:true};render()}
-function edit(id){form={...items.find(i=>i.id===id)};render()}
-function formHtml(){
-  const f=form,isD=f.type==='debt';
-  return `<div class="card"><b>${f.isNew?'Novo':'Editar'}</b><br><br>
-  <label>Nome</label><input id="f_n" value="${esc(f.name)}" placeholder="${isD?'Ex: Cartão, aluguel, empréstimo':'Ex: Viagem, reserva de emergência'}">
-  <div class="g2"><div><label>${isD?'Valor total':'Valor da meta'}</label><input id="f_t" type="number" step="0.01" inputmode="decimal" value="${f.total}"></div>
-  <div><label>${isD?'Já pago':'Já juntado'}</label><input id="f_p" type="number" step="0.01" inputmode="decimal" value="${f.paid}"></div></div>
-  <label>De quem é</label><select id="f_w"><option value="a" ${f.who==='a'?'selected':''}>${esc(names.a)}</option><option value="b" ${f.who==='b'?'selected':''}>${esc(names.b)}</option><option value="j" ${f.who==='j'?'selected':''}>Juntos</option></select>
-  ${isD?`<label>Vencimento</label><input id="f_d" type="date" value="${f.due}">`:`<label>Quanto planejam juntar por mês</label><input id="f_m" type="number" step="0.01" inputmode="decimal" value="${f.monthly}">`}
-  <label>Observação</label><input id="f_o" value="${esc(f.note)}">
-  <div class="g2"><button class="g" onclick="form=null;render()">Cancelar</button><button onclick="submitForm()">Salvar</button></div></div>`;
-}
-async function submitForm(){
-  const f=form,n=$('#f_n').value.trim();if(!n)return;
-  const it={id:f.id||'i'+Date.now().toString(36),type:f.type,name:n,total:+$('#f_t').value||0,paid:+$('#f_p').value||0,who:$('#f_w').value,
-    due:f.type==='debt'?$('#f_d').value:'',monthly:f.type==='goal'?(+$('#f_m').value||0):0,note:$('#f_o').value.trim(),log:f.log||[]};
-  form=null;await save(it);render();
-}
-function pay(id){
-  const it=items.find(i=>i.id===id);
-  const v=parseFloat((prompt(`Quanto (R$)? — ${it.name}`)||'').replace(',','.'));
-  if(!v)return;
-  const w=(prompt(`Quem? 1 = ${names.a}, 2 = ${names.b}, 3 = Juntos`,'3')||'3').trim();
-  const k=w==='1'?'a':w==='2'?'b':'j';
-  save({...it,paid:it.paid+v,log:[...(it.log||[]),{d:Date.now(),v,w:k}].slice(-30)});
-}
-async function cfg(){
-  const a=prompt('Seu nome:',names.a);if(a===null)return;
-  const b=prompt('Nome do seu namorado(a):',names.b);if(b===null)return;
-  names={a:a.trim()||'Eu',b:b.trim()||'Amor'};
-  if(db){try{await db.doc('config/names').set(names)}catch(e){}}else{lsSave();}
-  render();
-}
-const FIREBASE_CONFIG={
-  apiKey:"AIzaSyAyTemP5s7mHnxyObPVl-8Fi0chEuKQVLM",
-  authDomain:"contas-do-casal-cb209.firebaseapp.com",
-  projectId:"contas-do-casal-cb209",
-  storageBucket:"contas-do-casal-cb209.firebasestorage.app",
-  messagingSenderId:"121006618422",
-  appId:"1:121006618422:web:9a1627a35c18e728562597"
-};
-function start(){
-  lsLoad();render();
-  if(!FIREBASE_CONFIG.apiKey||!window.firebase){$('#st').textContent='modo local (Firebase não configurado)';return}
-  let code='';try{code=localStorage.getItem('casal-code')||''}catch(e){}
-  if(!code){code=(prompt('Crie ou digite o código secreto do casal (os dois usam o mesmo, ex: amor-2026-xk39):')||'').trim().toLowerCase().replace(/[^a-z0-9-]/g,'');
-    if(!code){$('#st').textContent='sem código: modo local';return}
-    try{localStorage.setItem('casal-code',code)}catch(e){}}
-  firebase.initializeApp(FIREBASE_CONFIG);
-  const fs=firebase.firestore(),base='casais/'+code;
-  db={collection:p=>fs.collection(base+'/'+p),doc:p=>fs.doc(base+'/'+p)};
-  $('#st').textContent='sincronizado entre vocês ✓';
-  db.collection('items').onSnapshot(s=>{items=s.docs.map(x=>({...x.data(),id:x.id}));render()},()=>{$('#st').textContent='erro de sincronização'});
-  db.doc('config/names').onSnapshot(s=>{const d=s.data();if(d){names={...names,...d};render()}},()=>{});
-}
-start();
-</script>
-</body>
-</html>
