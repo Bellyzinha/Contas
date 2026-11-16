@@ -3,9 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Contas do Casal</title><link rel="manifest" href="manifest.json">
+<title>Contas do Casal</title>
+<link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#d6456b">
-<script>if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js')</script>
 <style>
 :root{--bg:#faf7f5;--card:#fff;--tx:#241f20;--mut:#7a6f72;--ac:#d6456b;--ok:#2e9e6b;--bd:#eadfe2;--warn:#d98a1c;
 box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
@@ -59,10 +59,8 @@ textarea{min-height:140px;resize:vertical}
   <button data-t="a" onclick="go('a')">Agenda</button>
   <button data-t="n" onclick="go('n')">Notas</button>
 </nav>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script>
-let tab='r',items=[],names={a:'Eu',b:'Amor'},db=null,form=null,cal=new Date(new Date().getFullYear(),new Date().getMonth(),1),selDay=null;
+let tab='r',items=[],names={a:'Eu',b:'Amor'},db=null,form=null,cal=new Date(new Date().getFullYear(),new Date().getMonth(),1),selDay=null,needCode=false;
 const $=s=>document.querySelector(s);
 const R=v=>(+v||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -105,16 +103,17 @@ async function save(it){
   if(db){try{await db.collection('items').doc(it.id).set(it)}catch(e){$('#st').textContent='Erro ao salvar'}}
   else{const i=items.findIndex(x=>x.id===it.id);i<0?items.push(it):items[i]=it;lsSave();render()}
 }
-async function del(id){
-  if(!confirm('Apagar este item?'))return;
+function del(id){form={type:'del',id};render()}
+async function doDel(id){form=null;
   if(db){try{await db.collection('items').doc(id).delete()}catch(e){}}
-  else{items=items.filter(x=>x.id!==id);lsSave();render()}
-}
+  else{items=items.filter(x=>x.id!==id);lsSave()}
+  render()}
 function go(t){tab=t;form=null;render()}
 function render(){
   document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.t===tab));
   const nb=avisos().length;document.querySelector('nav button[data-t=d]').innerHTML='Dívidas'+(nb?`<span class="badge">${nb}</span>`:'');
-  $('#v').innerHTML=form?formHtml():tab==='r'?resumo():tab==='d'?lista('debt'):tab==='m'?lista('goal'):tab==='a'?agenda():notas();
+  const F=form||(needCode?{type:'code'}:null);
+  $('#v').innerHTML=F?formHtml(F):tab==='r'?resumo():tab==='d'?lista('debt'):tab==='m'?lista('goal'):tab==='a'?agenda():notas();
 }
 function resumo(){
   const D=items.filter(i=>i.type==='debt'),G=items.filter(i=>i.type==='goal');
@@ -154,8 +153,17 @@ function lista(t){
 }
 function newItem(t){form={type:t,name:'',total:'',paid:0,who:'j',cat:'Outros',due:'',monthly:'',note:'',isNew:true};render()}
 function edit(id){form={...items.find(i=>i.id===id)};render()}
-function formHtml(){
-  const f=form,isD=f.type==='debt';
+function formHtml(f){
+  const isD=f.type==='debt';
+  if(f.type==='code')return `<div class="card"><b>Código do casal</b><div class="mut" style="margin:6px 0">Inventem um código e usem o mesmo nos dois celulares (só letras minúsculas, números e hífen). Ex: amor-isa-2026-xk39</div>
+  <input id="f_k" placeholder="seu-codigo-aqui" autocapitalize="none" autocomplete="off"><button style="width:100%" onclick="setCode()">Entrar</button></div>`;
+  if(f.type==='del')return `<div class="card"><b>Apagar este item?</b><div class="g2" style="margin-top:12px"><button class="g" onclick="form=null;render()">Cancelar</button><button onclick="doDel('${f.id}')">Apagar</button></div></div>`;
+  if(f.type==='pay')return `<div class="card"><b>${esc(f.name)}</b><br><br><label>Quanto (R$)</label><input id="f_v" type="number" step="0.01" inputmode="decimal">
+  <label>Quem</label><select id="f_w"><option value="a">${esc(names.a)}</option><option value="b">${esc(names.b)}</option><option value="j" selected>Juntos</option></select>
+  <div class="g2"><button class="g" onclick="form=null;render()">Cancelar</button><button onclick="doPay('${f.id}')">Salvar</button></div></div>`;
+  if(f.type==='cfg')return `<div class="card"><b>Configurações</b><br><br><label>Seu nome</label><input id="f_a" value="${esc(names.a)}"><label>Nome do seu namorado(a)</label><input id="f_b" value="${esc(names.b)}">
+  <div class="g2"><button class="g" onclick="form=null;render()">Cancelar</button><button onclick="doCfg()">Salvar</button></div>
+  <button class="g" style="width:100%;margin-top:12px" onclick="try{localStorage.removeItem('casal-code')}catch(e){};location.reload()">Trocar código do casal</button></div>`;
   if(f.type==='event')return `<div class="card"><b>${f.isNew?'Novo compromisso':'Editar compromisso'}</b><br><br>
   <label>O que é</label><input id="f_n" value="${esc(f.name)}" placeholder="Ex: Jantar, consulta, pagar boleto">
   <div class="g2"><div><label>Data</label><input id="f_dt" type="date" value="${f.date}"></div><div><label>Hora (opcional)</label><input id="f_h" type="time" value="${f.time||''}"></div></div>
@@ -182,37 +190,4 @@ async function submitForm(){
   if(f.type==='event'){const nm=$('#f_n').value.trim(),dt=$('#f_dt').value;if(!nm||!dt)return;
     const ev={id:f.id||'e'+Date.now().toString(36),type:'event',name:nm,date:dt,time:$('#f_h').value,who:$('#f_w').value,note:$('#f_o').value.trim()};
     selDay=dt;cal=new Date(+dt.slice(0,4),+dt.slice(5,7)-1,1);form=null;await save(ev);render();return}
-  if(f.type==='note'){const nm=$('#f_n').value.trim(),tx=$('#f_x').value;if(!nm&&!tx.trim())return;
-    const nt={id:f.id||'n'+Date.now().toString(36),type:'note',name:nm,text:tx,who:$('#f_w').value,ts:f.ts||Date.now()};
-    form=null;await save(nt);render();return}
-  const n=$('#f_n').value.trim();if(!n)return;
-  const it={id:f.id||'i'+Date.now().toString(36),type:f.type,name:n,total:+$('#f_t').value||0,paid:+$('#f_p').value||0,who:$('#f_w').value,cat:$('#f_c').value,
-    due:f.type==='debt'?$('#f_d').value:'',monthly:f.type==='goal'?(+$('#f_m').value||0):0,note:$('#f_o').value.trim(),log:f.log||[]};
-  form=null;await save(it);render();
-}
-function pay(id){
-  const it=items.find(i=>i.id===id);
-  const v=parseFloat((prompt(`Quanto (R$)? — ${it.name}`)||'').replace(',','.'));
-  if(!v)return;
-  const w=(prompt(`Quem? 1 = ${names.a}, 2 = ${names.b}, 3 = Juntos`,'3')||'3').trim();
-  const k=w==='1'?'a':w==='2'?'b':'j';
-  save({...it,paid:it.paid+v,log:[...(it.log||[]),{d:Date.now(),v,w:k}].slice(-30)});
-}
-async function cfg(){
-  const a=prompt('Seu nome:',names.a);if(a===null)return;
-  const b=prompt('Nome do seu namorado(a):',names.b);if(b===null)return;
-  names={a:a.trim()||'Eu',b:b.trim()||'Amor'};
-  if(db){try{await db.doc('config/names').set(names)}catch(e){}}else{lsSave();}
-  render();
-}
-const FIREBASE_CONFIG={
-  apiKey:"AIzaSyAyTemP5s7mHnxyObPVl-8Fi0chEuKQVLM",
-  authDomain:"contas-do-casal-cb209.firebaseapp.com",
-  projectId:"contas-do-casal-cb209",
-  storageBucket:"contas-do-casal-cb209.firebasestorage.app",
-  messagingSenderId:"121006618422",
-  appId:"1:121006618422:web:9a1627a35c18e728562597"
-};
-function start(){
-  lsLoad();render();
-  if(!FIREBASE_CON
+  if(f.type==='note'){const nm=$('#f_n').value.trim(),tx=$('#f_x').value;if(!
